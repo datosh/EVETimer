@@ -7,6 +7,7 @@
 
 #include "targetver.h"
 
+
 #define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers
 // Windows Header Files:
 #include <windows.h>
@@ -16,8 +17,15 @@
 #include <malloc.h>
 #include <memory.h>
 #include <tchar.h>
+#include <ShlObj.h>
+
+#include <ctime>
+#include <iostream>
+#include <fstream>
 #include <vector>
 #include <string>
+#include <thread>
+#include <chrono>
 
+#include "EVETimer.h"
 
-// TODO: reference additional headers your program requires here

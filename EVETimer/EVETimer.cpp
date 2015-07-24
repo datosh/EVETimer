@@ -1,19 +1,8 @@
-// EVETimer.cpp : Defines the entry point for the application.
-//
-
 #include "stdafx.h"
-#include "EVETimer.h"
 
 #define MAX_LOADSTRING 100
 
-struct Timer
-{
-	int hours;
-	int minutes;
-	int seconds;
-	BOOL active;
-	char* description;
-};
+#define SAVE_FILE_NAME L"EVETIMER.save"
 
 // Global Variables:
 HINSTANCE hInst;                                // current instance
@@ -23,6 +12,8 @@ WCHAR szNewTimerWindowClass[MAX_LOADSTRING] = TEXT("NEWEVETIMER");	// the new ti
 std::vector<Timer> timers;
 HWND mainHwnd = nullptr;
 HWND newTimerHWnd = nullptr;
+wchar_t saveFilePath[MAX_STRING];
+int successfull_loads = 0;
 
 // Forward declarations of functions included in this code module:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -32,7 +23,56 @@ LRESULT CALLBACK	NewTimerWndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 DWORD WINAPI		UpdateThreadFnc(LPVOID);
 
+void loadAndSetup(void)
+{
+	// Get the path to %APPDATA%
+	PWSTR roamingAppDataPath;
+	SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL, &roamingAppDataPath);
 
+	// Test if the Folder already exists and create
+	wchar_t saveFolderPath[MAX_STRING];
+	swprintf_s(saveFolderPath, MAX_STRING, L"%s\\EVETIMER", roamingAppDataPath);
+	if (CreateDirectory(saveFolderPath, NULL))
+	{
+		MessageBox(NULL, TEXT("You are using EVETimer for the first time. A folder to save timers was created!"), TEXT("Welcome"), MB_OK);
+	}
+
+	// Loaded save file path
+	swprintf_s(saveFilePath, MAX_STRING, L"%s\\%s", saveFolderPath, SAVE_FILE_NAME);
+
+	// Open file
+	std::wfstream infile(saveFilePath);
+	if (!infile.good())
+	{
+		MessageBox(NULL, TEXT("Something went wrong opening the save file. Timer probably can't be saved!"), TEXT("ERROR!"), MB_OK);
+	}
+
+	// Parse input
+	std::wstring line;
+	std::wstring delimiter = L":::";
+	while (std::getline(infile, line))
+	{
+		// Check if the save string is correctly formatted
+		auto pos = line.find(delimiter);
+		if (pos == std::wstring::npos)
+		{
+			MessageBox(NULL, TEXT("Can't find the delimiter in the save string. Timer probably can't be loaded!"), TEXT("ERROR!"), MB_OK);
+			continue;
+		}
+
+		// Load end_time and description
+		std::wstring token = line.substr(0, pos);
+		auto end_time = std::stol(token);
+		std::wstring description = line.substr(pos + 3, std::wstring::npos);
+		Timer t(end_time);
+		t.setDescr(&description[0]);
+		timers.push_back(t);
+		
+		
+
+		successfull_loads += 1;
+	}
+}
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -41,8 +81,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 {
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
-
-    // TODO: Place code here.
 
     // Initialize global strings
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
@@ -78,7 +116,7 @@ DWORD WINAPI UpdateThreadFnc(LPVOID lpParam)
 {
 	while (true)
 	{
-		Sleep(1000);
+		std::this_thread::sleep_for(std::chrono::seconds(1));
 		PostMessage(mainHwnd, WM_UPDATE, 0, 0);
 	}
 }
@@ -151,6 +189,14 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    ShowWindow(mainHwnd, nCmdShow);
    UpdateWindow(mainHwnd);
 
+   // Create text field for display
+   for (int i = 0; i < timers.size(); ++i)
+   {
+	   CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("STATIC"), timers[i].getDisplayText(),
+		   WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
+		   20, (i+1) * 35 - 25, 250, 25, mainHwnd, (HMENU)(IDC_TIMER_ONE + i), GetModuleHandle(NULL), NULL);
+   }
+
    return TRUE;
 }
 
@@ -182,18 +228,16 @@ BOOL AddTimer(HWND hWnd)
 		return false;
 	}
 
-	char description[256];
+	wchar_t description[256];
 
-	GetDlgItemText(hWnd, IDC_NEW_DESCRIPTION, (LPWSTR)description, 256);
+	GetDlgItemText(hWnd, IDC_NEW_DESCRIPTION, description, 256);
 	
-	Timer next = {};
-	next.hours = hour;
-	next.minutes = min;
-	next.seconds = sec;
-	next.active = true;
-	next.description = (char*)malloc(sizeof(next.description) * 256);
-	memcpy(next.description, description, 256);
+	Timer next(0, hour, min, sec);
+	next.setDescr(description);
 	timers.push_back(next);
+
+	std::wofstream outfile(saveFilePath, std::wofstream::app);
+	outfile << next.getSaveString() << std::endl;
 
 	return true;
 }
@@ -210,50 +254,34 @@ BOOL AddTimer(HWND hWnd)
 //
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	int numTimers = 0;
+	int numTimers = 0, i = 0;
+	Timer current;
+
     switch (message)
     {
+	case WM_CREATE:
+		loadAndSetup();
+		break;
 	case WM_ADD_TIMER_OVERVIEW:
 
 		numTimers = timers.size();
-		Timer current = timers[timers.size() - 1];
-		WCHAR toDisplay[MAX_LOADSTRING];
-		swprintf(toDisplay, sizeof(toDisplay), L"%d:%d:%d\t%s", current.hours, current.minutes, current.seconds, current.description);
+		current = timers[timers.size() - 1];
 
-		CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("STATIC"), toDisplay,
+		CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("STATIC"), current.getDisplayText(),
 			WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
 			20, numTimers * 35 - 25, 250, 25, hWnd, (HMENU)(IDC_TIMER_ONE + numTimers - 1), GetModuleHandle(NULL), NULL);
 
 		break;
 	case WM_UPDATE:
-		for (int i = 0; i < timers.size(); ++i)
+		i = 0;
+		for (auto &t : timers)
 		{
-			if (!timers[i].active)
+			if (t.isActive())
 			{
-				continue;
+				t.tick();
+				SetDlgItemText(hWnd, IDC_TIMER_ONE + i, t.getDisplayText());
 			}
-
-			Timer current = timers[i];
-			timers[i].seconds -= 1;
-			if (timers[i].seconds == -1)
-			{
-				timers[i].seconds = 60;
-				timers[i].minutes -= 1;
-			}
-			if (timers[i].minutes == -1)
-			{
-				timers[i].minutes = 60;
-				timers[i].hours -= 1;
-			}
-			if (timers[i].hours == -1)
-			{
-				timers[i].hours = 0;
-				timers[i].active = false;
-			}
-			WCHAR toDisplay[MAX_LOADSTRING];
-			swprintf(toDisplay, sizeof(toDisplay), L"%d:%d:%d\t%s", current.hours, current.minutes, current.seconds, current.description);
-
-			SetDlgItemText(hWnd, IDC_TIMER_ONE + i, toDisplay);
+			i += 1;
 		}
 		break;
     case WM_COMMAND:

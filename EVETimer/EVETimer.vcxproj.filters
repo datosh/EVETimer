@@ -30,12 +30,18 @@
     <ClInclude Include="EVETimer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="CTimer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="EVETimer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CTimer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
